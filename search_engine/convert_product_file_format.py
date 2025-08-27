@@ -29,19 +29,19 @@ for p in tqdm(all_products, total=len(all_products)):
     doc['product'] = p
     docs.append(doc)
 
-
-with open('./resources_100/documents.jsonl', 'w+') as f:
-    for doc in docs[:100]:
-        f.write(json.dumps(doc) + '\n')
+#
+# with open('./resources_100/documents.jsonl', 'w+') as f:
+#     for doc in docs[:100]:
+#         f.write(json.dumps(doc) + '\n')
 
 with open('./resources/documents.jsonl', 'w+') as f:
     for doc in docs:
         f.write(json.dumps(doc) + '\n')
+#
+# with open('./resources_1k/documents.jsonl', 'w+') as f:
+#     for doc in docs[:1000]:
+#         f.write(json.dumps(doc) + '\n')
 
-with open('./resources_1k/documents.jsonl', 'w+') as f:
-    for doc in docs[:1000]:
-        f.write(json.dumps(doc) + '\n')
-
-with open('./resources_100k/documents.jsonl', 'w+') as f:
-    for doc in docs[:100000]:
-        f.write(json.dumps(doc) + '\n')
+# with open('./resources_100k/documents.jsonl', 'w+') as f:
+#     for doc in docs[:100000]:
+#         f.write(json.dumps(doc) + '\n')
