@@ -306,7 +306,7 @@ class SimServer:
         random.seed(233)
         random.shuffle(self.goals)
 
-        # Apply `filter_goals` parameter if exists to select speific goal(s)
+        # Apply `filter_goals` parameter if exists to select specific goal(s)
         if filter_goals is not None:
             self.goals = [
                 goal for (i, goal) in enumerate(self.goals)

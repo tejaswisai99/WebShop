@@ -18,7 +18,6 @@ FEAT_CONV = join(BASE_DIR, '../data/feat_conv.pt')
 FEAT_IDS = join(BASE_DIR, '../data/feat_ids.pt')
 
 HUMAN_ATTR_PATH = join(BASE_DIR, '../data/items_human_ins.json')
-HUMAN_ATTR_PATH = join(BASE_DIR, '../data/items_human_ins.json')
 
 def random_idx(cum_weights):
     """Generate random index by sampling uniformly from sum of all weights, then
