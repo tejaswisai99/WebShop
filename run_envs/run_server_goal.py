@@ -52,49 +52,132 @@ def _snapshot(env: WebAgentTextEnv):
         "available_actions": _available_actions(env)
     }
 
+# ====== API LAYER additions/changes ======
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
     """
-    Start a new session with a caller-provided goal (instruction_text).
-    JSON body:
+    Start a new session (optionally with a specific goal).
+    JSON body (all optional):
       {
-        "goal": "Find me ... under $20 ...",
-        "observation_mode": "text" | "text_rich" | "html" | "url",  (optional; default "text")
-        "session": "my-session-id"                                   (optional)
+        "goal_idx": 123,                      # int, index into SimServer.goals
+        "observation_mode": "text" | "text_rich" | "html" | "url",
+        "session": "my-session-id"
       }
-    Returns: session snapshot with observation and available actions.
     """
     payload = request.get_json(force=True, silent=True) or {}
-    #goal = payload.get("goal")
-    #if not goal or not isinstance(goal, str):
-    #    return jsonify({"error": "Missing or invalid 'goal' (instruction_text)"}), 400
 
     observation_mode = payload.get("observation_mode", "text")
     if observation_mode not in {"text", "text_rich", "html", "url"}:
         return jsonify({"error": f"Unsupported observation_mode: {observation_mode}"}), 400
 
-    requested_session = payload.get("session")  # optional client-provided session id
-
-    # Ensure the next env reset uses this exact instruction_text
-    # (SimServer.receive respects assigned_instruction_text if present)
-    #shared_server.assigned_instruction_text = goal
+    requested_session = payload.get("session")  # optional
+    goal_idx = payload.get("goal_idx", None)
+    if goal_idx is not None:
+        try:
+            goal_idx = int(goal_idx)
+        except Exception:
+            return jsonify({"error": "goal_idx must be an integer"}), 400
+        if not (0 <= goal_idx < len(shared_server.goals)):
+            return jsonify({"error": f"goal_idx out of range [0, {len(shared_server.goals)-1}]"}), 400
 
     env = _make_env(observation_mode=observation_mode, session_prefix="api_")
-    # Use client session if supplied; otherwise WebAgentTextEnv will generate one
-    obs, _ = env.reset(session=requested_session, instruction_text=shared_server.assigned_instruction_text)
+    # NEW: pass session_int=goal_idx for deterministic goal selection
+    obs, _ = env.reset(session=requested_session,
+                       instruction_text=shared_server.assigned_instruction_text,
+                       session_int=goal_idx)
 
-    # Persist this env handle by its session_id
     with _sessions_lock:
         _sessions[env.session] = env
 
-    # Clear the hack after use so future sessions don’t inherit by accident
+    # Clear goal override hack
     shared_server.assigned_instruction_text = None
 
     snap = _snapshot(env)
+    # It’s useful to echo back which goal index got bound
     return jsonify({
         "message": "session_started",
+        "goal_idx": goal_idx if goal_idx is not None else None,
         **snap
     }), 200
+
+@app.route("/api/replay", methods=["POST"])
+def api_replay():
+    """
+    Stateless, deterministic reconstruction of a page by replaying actions from a given goal.
+    JSON body:
+      {
+        "goal_idx": 123,                        # REQUIRED (int; index into SimServer.goals)
+        "actions": ["search[...]", "click[...]", ...],   # REQUIRED (list[str])
+        "observation_mode": "text" | "text_rich" | "html" | "url"   # optional; default "text"
+      }
+    Returns (ephemeral; session not persisted):
+      {
+        "message": "replay_ok",
+        "session_id": "<temp_session_id>",     # informational only (already cleaned up server-side)
+        "goal_idx": 123,
+        "steps_replayed": N,
+        "stopped_early": true|false,           # true if 'done' occurred before consuming all actions
+        "reward": <float>,                     # last reward observed during replay
+        "done": true|false,
+        ... snapshot fields (instruction_text, url, observation, available_actions) ...
+      }
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    if "goal_idx" not in payload or "actions" not in payload:
+        return jsonify({"error": "goal_idx (int) and actions (list[str]) are required"}), 400
+
+    # Validate goal_idx
+    try:
+        goal_idx = int(payload["goal_idx"])
+    except Exception:
+        return jsonify({"error": "goal_idx must be an integer"}), 400
+    if not (0 <= goal_idx < len(shared_server.goals)):
+        return jsonify({"error": f"goal_idx out of range [0, {len(shared_server.goals)-1}]"}), 400
+
+    # Validate actions
+    actions = payload["actions"]
+    if not isinstance(actions, list) or any(not isinstance(a, str) for a in actions):
+        return jsonify({"error": "actions must be a list of strings"}), 400
+
+    # Observation mode
+    observation_mode = payload.get("observation_mode", "text")
+    if observation_mode not in {"text", "text_rich", "html", "url"}:
+        return jsonify({"error": f"Unsupported observation_mode: {observation_mode}"}), 400
+
+    # Create a temporary env (NOT registered in _sessions)
+    env = _make_env(observation_mode=observation_mode, session_prefix="sim_")
+    obs, _ = env.reset(session=None, session_int=goal_idx)
+
+    # Replay the action history to reach the desired state
+    last_reward, last_done = 0.0, False
+    steps_replayed = 0
+    for a in actions:
+        _, last_reward, last_done, _ = env.step(a)
+        steps_replayed += 1
+        if last_done:
+            break
+
+    # Snapshot BEFORE cleanup
+    snap = _snapshot(env)
+    response = {
+        "message": "replay_ok",
+        "session_id": snap["session_id"],   # informational; will be cleaned
+        "goal_idx": goal_idx,
+        "steps_replayed": steps_replayed,
+        "stopped_early": bool(last_done) and (steps_replayed < len(actions)),
+        "reward": float(last_reward),
+        "done": bool(last_done),
+        **snap
+    }
+
+    # CRITICAL: clean up SimServer's per-session bookkeeping to avoid memory growth
+    try:
+        shared_server.user_sessions.pop(env.session, None)
+    except Exception:
+        pass  # defensive; ignore if already gone
+
+    return jsonify(response), 200
 
 
 @app.route("/api/step", methods=["POST"])
