@@ -14,10 +14,10 @@ from web_agent_site.utils import DEBUG_PROD_SIZE
 if __name__ == '__main__':
     env = gym.make('WebAgentTextEnv-v0', observation_mode='text', num_products=DEBUG_PROD_SIZE)
     env.reset()
-    
+
     try:
         policy = RandomPolicy()
-    
+
         observation = env.observation
         while True:
             print(observation)

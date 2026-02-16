@@ -237,20 +237,49 @@ class WebAgentTextEnv(gym.Env):
                 observation += processed_t + '\n'
             return observation
     
-    def reset(self, session=None, instruction_text=None):
+    # def reset(self, session=None, instruction_text=None):
+    #     """Create a new session and reset environment variables"""
+    #     session_int = None
+    #     if session is not None:
+    #         self.session = str(session)
+    #         if isinstance(session, int):
+    #             session_int = session
+    #     else:
+    #         self.session = ''.join(random.choices(string.ascii_lowercase, k=10))
+    #     if self.session_prefix is not None:
+    #         self.session = self.session_prefix + self.session
+    #
+    #     init_url = f'{self.base_url}/{self.session}'
+    #     self.browser.get(init_url, session_id=self.session, session_int=session_int)
+    #
+    #     self.text_to_clickable = None
+    #     self.instruction_text = self.get_instruction_text() if instruction_text is None else instruction_text
+    #     obs = self.observation
+    #     self.prev_obs = [obs]
+    #     self.prev_actions = []
+    #     return obs, None
+    # --- in class WebAgentTextEnv ---
+
+    def reset(self, session=None, instruction_text=None, session_int=None):
         """Create a new session and reset environment variables"""
-        session_int = None
+        session_int_arg = None
         if session is not None:
             self.session = str(session)
+            # Backward-compat: if user passes an int as session, keep the prior behavior
             if isinstance(session, int):
-                session_int = session
+                session_int_arg = session
         else:
             self.session = ''.join(random.choices(string.ascii_lowercase, k=10))
         if self.session_prefix is not None:
             self.session = self.session_prefix + self.session
 
         init_url = f'{self.base_url}/{self.session}'
-        self.browser.get(init_url, session_id=self.session, session_int=session_int)
+
+        # NEW: explicit deterministic goal selection (takes priority)
+        if session_int is not None:
+            session_int_arg = int(session_int)
+
+        self.browser.get(init_url, session_id=self.session, session_int=session_int_arg)
 
         self.text_to_clickable = None
         self.instruction_text = self.get_instruction_text() if instruction_text is None else instruction_text
@@ -306,7 +335,7 @@ class SimServer:
         random.seed(233)
         random.shuffle(self.goals)
 
-        # Apply `filter_goals` parameter if exists to select speific goal(s)
+        # Apply `filter_goals` parameter if exists to select specific goal(s)
         if filter_goals is not None:
             self.goals = [
                 goal for (i, goal) in enumerate(self.goals)

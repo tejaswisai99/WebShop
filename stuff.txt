@@ -1,0 +1,4 @@
+conda install -c pytorch faiss
+conda install -c pytorch faiss-cpu
+
+python -m spacy download en_core_web_sm
